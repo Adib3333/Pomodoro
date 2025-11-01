@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, RotateCcw, Sun, Moon, Music, Upload, SkipForward, Volume2, Plus, Trash2, Check, Download, TrendingUp, Settings } from 'lucide-react';
+import { Play, Pause, RotateCcw, Sun, Moon, Music, Upload, SkipForward, Volume2, Plus, Trash2, Check, Download, TrendingUp, Settings, X, Calendar, Target, Zap } from 'lucide-react';
 
 export default function AkatsukiPomodoro() {
   const [darkMode, setDarkMode] = useState(true);
@@ -22,10 +22,13 @@ export default function AkatsukiPomodoro() {
   // Stats
   const [stats, setStats] = useState({ totalSessions: 0, totalMinutes: 0, streak: 0, lastDate: null });
   const [showStats, setShowStats] = useState(false);
+  const [sessionHistory, setSessionHistory] = useState([]);
+  const [dailyGoal, setDailyGoal] = useState(8);
   
   // Settings
   const [showSettings, setShowSettings] = useState(false);
   const [customNotificationSound, setCustomNotificationSound] = useState(null);
+  const [autoStartNext, setAutoStartNext] = useState(false);
   
   // Music player states
   const [playlist, setPlaylist] = useState([]);
@@ -43,10 +46,35 @@ export default function AkatsukiPomodoro() {
     const savedStats = localStorage.getItem('pomodoroStats');
     const savedTasks = localStorage.getItem('pomodoroTasks');
     const savedTheme = localStorage.getItem('pomodoroTheme');
+    const savedHistory = localStorage.getItem('pomodoroHistory');
+    const savedGoal = localStorage.getItem('pomodoroGoal');
+    const savedAutoStart = localStorage.getItem('pomodoroAutoStart');
+    const savedSession = localStorage.getItem('pomodoroSession');
     
     if (savedStats) setStats(JSON.parse(savedStats));
     if (savedTasks) setTasks(JSON.parse(savedTasks));
     if (savedTheme) setCurrentTheme(savedTheme);
+    if (savedHistory) setSessionHistory(JSON.parse(savedHistory));
+    if (savedGoal) setDailyGoal(Number(savedGoal));
+    if (savedAutoStart) setAutoStartNext(JSON.parse(savedAutoStart));
+    
+    // Restore session
+    if (savedSession) {
+      const session = JSON.parse(savedSession);
+      const now = Date.now();
+      const elapsed = Math.floor((now - session.timestamp) / 1000);
+      const newTimeLeft = Math.max(0, session.timeLeft - elapsed);
+      
+      if (newTimeLeft > 0 && session.isRunning) {
+        setTimeLeft(newTimeLeft);
+        setIsBreak(session.isBreak);
+        setIsLongBreak(session.isLongBreak);
+        setWorkDuration(session.workDuration);
+        setBreakDuration(session.breakDuration);
+        setSessionCount(session.sessionCount);
+        // Don't auto-start, just restore state
+      }
+    }
   }, []);
 
   // Save stats
@@ -64,6 +92,36 @@ export default function AkatsukiPomodoro() {
     localStorage.setItem('pomodoroTheme', currentTheme);
   }, [currentTheme]);
 
+  // Save history
+  useEffect(() => {
+    localStorage.setItem('pomodoroHistory', JSON.stringify(sessionHistory));
+  }, [sessionHistory]);
+
+  // Save goal
+  useEffect(() => {
+    localStorage.setItem('pomodoroGoal', dailyGoal.toString());
+  }, [dailyGoal]);
+
+  // Save auto-start preference
+  useEffect(() => {
+    localStorage.setItem('pomodoroAutoStart', JSON.stringify(autoStartNext));
+  }, [autoStartNext]);
+
+  // Save session state
+  useEffect(() => {
+    const sessionState = {
+      timeLeft,
+      isRunning,
+      isBreak,
+      isLongBreak,
+      workDuration,
+      breakDuration,
+      sessionCount,
+      timestamp: Date.now()
+    };
+    localStorage.setItem('pomodoroSession', JSON.stringify(sessionState));
+  }, [timeLeft, isRunning, isBreak, isLongBreak, workDuration, breakDuration, sessionCount]);
+
   // Update streak
   useEffect(() => {
     const today = new Date().toDateString();
@@ -73,6 +131,24 @@ export default function AkatsukiPomodoro() {
       setStats(prev => ({ ...prev, streak: newStreak, lastDate: today }));
     }
   }, [sessionCount, stats.lastDate, stats.streak]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      
+      if (e.code === 'Space') {
+        e.preventDefault();
+        toggleTimer();
+      } else if (e.code === 'KeyR') {
+        e.preventDefault();
+        resetTimer();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [isRunning]);
 
   // Timer logic
   useEffect(() => {
@@ -90,13 +166,20 @@ export default function AkatsukiPomodoro() {
       }
       
       if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification(isBreak ? 'Work Session Complete!' : 'Break Complete!', {
-          body: isBreak ? 'Time to get back to work!' : 'Time for a break!',
-          icon: '☁'
+        new Notification(isBreak || isLongBreak ? 'Break Complete!' : 'Work Session Complete!', {
+          body: isBreak || isLongBreak ? 'Time to get back to work!' : 'Time for a break!',
+          icon: '/logo.jpg'
         });
       }
       
       if (!isBreak && !isLongBreak) {
+        const newSession = {
+          date: new Date().toISOString(),
+          duration: workDuration,
+          type: 'work'
+        };
+        setSessionHistory(prev => [newSession, ...prev].slice(0, 50)); // Keep last 50
+        
         setStats(prev => ({
           ...prev,
           totalSessions: prev.totalSessions + 1,
@@ -108,6 +191,11 @@ export default function AkatsukiPomodoro() {
         setTimeLeft(workDuration * 60);
         setIsBreak(false);
         setIsLongBreak(false);
+        if (autoStartNext) {
+          setIsRunning(true);
+        } else {
+          setIsRunning(false);
+        }
       } else {
         const newCount = sessionCount + 1;
         setSessionCount(newCount);
@@ -119,11 +207,16 @@ export default function AkatsukiPomodoro() {
           setTimeLeft(breakDuration * 60);
           setIsBreak(true);
         }
+        
+        if (autoStartNext) {
+          setIsRunning(true);
+        } else {
+          setIsRunning(false);
+        }
       }
-      setIsRunning(false);
     }
     return () => clearInterval(interval);
-  }, [isRunning, timeLeft, isBreak, isLongBreak, workDuration, breakDuration, longBreakDuration, sessionCount, customNotificationSound]);
+  }, [isRunning, timeLeft, isBreak, isLongBreak, workDuration, breakDuration, longBreakDuration, sessionCount, customNotificationSound, autoStartNext]);
 
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -192,9 +285,26 @@ export default function AkatsukiPomodoro() {
     const files = Array.from(e.target.files);
     const newTracks = files.map(file => ({
       name: file.name,
-      url: URL.createObjectURL(file)
+      url: URL.createObjectURL(file),
+      id: Date.now() + Math.random()
     }));
     setPlaylist([...playlist, ...newTracks]);
+  };
+
+  const deleteTrack = (id) => {
+    const newPlaylist = playlist.filter(track => track.id !== id);
+    setPlaylist(newPlaylist);
+    if (currentTrackIndex >= newPlaylist.length) {
+      setCurrentTrackIndex(Math.max(0, newPlaylist.length - 1));
+    }
+  };
+
+  const clearPlaylist = () => {
+    if (window.confirm('Clear entire playlist?')) {
+      setPlaylist([]);
+      setCurrentTrackIndex(0);
+      setIsPlaying(false);
+    }
   };
 
   const handleSoundUpload = (e) => {
@@ -250,11 +360,23 @@ export default function AkatsukiPomodoro() {
     if (window.confirm('Are you sure you want to reset all statistics?')) {
       setStats({ totalSessions: 0, totalMinutes: 0, streak: 0, lastDate: null });
       setSessionCount(0);
+      setSessionHistory([]);
     }
+  };
+
+  const getTodaySessions = () => {
+    const today = new Date().toDateString();
+    return sessionHistory.filter(session => {
+      const sessionDate = new Date(session.date).toDateString();
+      return sessionDate === today && session.type === 'work';
+    }).length;
   };
 
   const progress = ((isBreak ? breakDuration * 60 : isLongBreak ? longBreakDuration * 60 : workDuration * 60) - timeLeft) / 
                    (isBreak ? breakDuration * 60 : isLongBreak ? longBreakDuration * 60 : workDuration * 60) * 100;
+
+  const todaySessions = getTodaySessions();
+  const goalProgress = (todaySessions / dailyGoal) * 100;
 
   // Theme-based color classes
   const getThemeClasses = () => {
@@ -325,12 +447,9 @@ export default function AkatsukiPomodoro() {
       <div className="relative z-10 container mx-auto px-4 py-4 sm:py-8 max-w-6xl">
         {/* Header */}
         <div className="flex justify-between items-center mb-6 sm:mb-8">
-          <div className="flex items-center gap-4">
-            <img src="/logo.png" alt="Akatsuki" className="w-12 h-12 sm:w-16 sm:h-16 rounded-full object-cover" />
-            <h1 className={`text-2xl sm:text-4xl font-bold ${themeClasses.titleColor}`}>
-              Pomodoro Timer
-            </h1>
-          </div>
+          <h1 className={`text-2xl sm:text-4xl font-bold ${themeClasses.titleColor}`}>
+            Pomodoro Timer
+          </h1>
           <div className="flex gap-2">
             <button
               onClick={() => setShowStats(!showStats)}
@@ -359,6 +478,29 @@ export default function AkatsukiPomodoro() {
           </div>
         </div>
 
+        {/* Daily Goal Progress */}
+        <div className={`rounded-2xl p-4 mb-6 shadow-2xl ${
+          darkMode ? `bg-gray-800 border-2 ${themeClasses.border}` : `bg-white border-2 ${themeClasses.border}`
+        }`}>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Target className={themeClasses.primaryColor} size={20} />
+              <span className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                Daily Goal: {todaySessions}/{dailyGoal} sessions
+              </span>
+            </div>
+            <span className={`text-sm ${themeClasses.primaryColor} font-bold`}>
+              {Math.min(100, Math.round(goalProgress))}%
+            </span>
+          </div>
+          <div className={`w-full h-2 rounded-full ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>
+            <div
+              className={`h-full rounded-full transition-all duration-500 bg-gradient-to-r ${themeClasses.gradient}`}
+              style={{ width: `${Math.min(100, goalProgress)}%` }}
+            />
+          </div>
+        </div>
+
         {/* Stats Panel */}
         {showStats && (
           <div className={`rounded-2xl p-6 mb-6 shadow-2xl ${
@@ -384,7 +526,7 @@ export default function AkatsukiPomodoro() {
                 </button>
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
                 <div className={`text-3xl font-bold ${themeClasses.primaryColor}`}>{stats.totalSessions}</div>
                 <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Total Sessions</div>
@@ -398,8 +540,39 @@ export default function AkatsukiPomodoro() {
                 <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Day Streak</div>
               </div>
               <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                <div className={`text-3xl font-bold ${themeClasses.primaryColor}`}>{sessionCount}</div>
+                <div className={`text-3xl font-bold ${themeClasses.primaryColor}`}>{todaySessions}</div>
                 <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Today's Sessions</div>
+              </div>
+            </div>
+
+            {/* Session History */}
+            <div>
+              <h3 className={`text-lg font-bold mb-3 flex items-center gap-2 ${themeClasses.primaryColor}`}>
+                <Calendar size={20} />
+                Recent Sessions
+              </h3>
+              <div className={`max-h-64 overflow-y-auto rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                {sessionHistory.length === 0 ? (
+                  <p className={`text-center py-4 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                    No sessions yet. Complete your first Pomodoro!
+                  </p>
+                ) : (
+                  sessionHistory.map((session, index) => (
+                    <div
+                      key={index}
+                      className={`px-4 py-2 border-b ${darkMode ? 'border-gray-600' : 'border-gray-200'} last:border-b-0`}
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className={`${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                          {session.duration} min work session
+                        </span>
+                        <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                          {new Date(session.date).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -448,6 +621,36 @@ export default function AkatsukiPomodoro() {
               />
             </div>
 
+            <div className="mb-4">
+              <label className={`block text-sm mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Daily Goal (sessions)
+              </label>
+              <input
+                type="number"
+                value={dailyGoal}
+                onChange={(e) => setDailyGoal(Number(e.target.value))}
+                className={`w-full px-3 py-2 rounded ${
+                  darkMode ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-900'
+                }`}
+                min="1"
+              />
+            </div>
+
+            <div className="mb-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoStartNext}
+                  onChange={(e) => setAutoStartNext(e.target.checked)}
+                  className="w-5 h-5"
+                />
+                <span className={`${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Auto-start next session
+                </span>
+                <Zap size={16} className={themeClasses.primaryColor} />
+              </label>
+            </div>
+
             <div>
               <label className={`block text-sm mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                 Custom Notification Sound
@@ -468,6 +671,14 @@ export default function AkatsukiPomodoro() {
                 onChange={handleSoundUpload}
                 className="hidden"
               />
+            </div>
+
+            <div className={`mt-4 p-3 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+              <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                ⌨️ <strong>Keyboard Shortcuts:</strong><br/>
+                <kbd className="px-2 py-1 bg-gray-600 text-white rounded text-xs mr-2">Space</kbd> Play/Pause<br/>
+                <kbd className="px-2 py-1 bg-gray-600 text-white rounded text-xs mr-2">R</kbd> Reset Timer
+              </p>
             </div>
           </div>
         )}
@@ -670,11 +881,23 @@ export default function AkatsukiPomodoro() {
         <div className={`mt-6 rounded-2xl p-6 shadow-2xl ${
           darkMode ? 'bg-gray-800 border-2 border-purple-900' : 'bg-white border-2 border-purple-200'
         }`}>
-          <div className="flex items-center gap-3 mb-4">
-            <Music className={darkMode ? 'text-purple-400' : 'text-purple-600'} size={24} />
-            <h2 className={`text-2xl font-bold ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>
-              Music Player
-            </h2>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <Music className={darkMode ? 'text-purple-400' : 'text-purple-600'} size={24} />
+              <h2 className={`text-2xl font-bold ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>
+                Music Player
+              </h2>
+            </div>
+            {playlist.length > 0 && (
+              <button
+                onClick={clearPlaylist}
+                className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${
+                  darkMode ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-red-600 hover:bg-red-500 text-white'
+                }`}
+              >
+                Clear All
+              </button>
+            )}
           </div>
 
           {playlist.length === 0 ? (
@@ -745,15 +968,27 @@ export default function AkatsukiPomodoro() {
               <div className={`max-h-32 overflow-y-auto rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
                 {playlist.map((track, index) => (
                   <div
-                    key={index}
-                    onClick={() => setCurrentTrackIndex(index)}
-                    className={`px-4 py-2 cursor-pointer transition-colors truncate ${
+                    key={track.id}
+                    className={`flex items-center justify-between px-4 py-2 cursor-pointer transition-colors ${
                       index === currentTrackIndex
                         ? (darkMode ? 'bg-purple-900 text-white' : 'bg-purple-200 text-purple-900')
                         : (darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-200 text-gray-700')
                     }`}
                   >
-                    {track.name}
+                    <span onClick={() => setCurrentTrackIndex(index)} className="flex-1 truncate">
+                      {track.name}
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteTrack(track.id);
+                      }}
+                      className={`ml-2 p-1 rounded hover:bg-red-600 transition-colors ${
+                        darkMode ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-white'
+                      }`}
+                    >
+                      <X size={16} />
+                    </button>
                   </div>
                 ))}
               </div>
