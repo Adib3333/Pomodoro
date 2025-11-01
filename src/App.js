@@ -325,9 +325,12 @@ export default function AkatsukiPomodoro() {
       <div className="relative z-10 container mx-auto px-4 py-4 sm:py-8 max-w-6xl">
         {/* Header */}
         <div className="flex justify-between items-center mb-6 sm:mb-8">
-          <h1 className={`text-2xl sm:text-4xl font-bold ${themeClasses.titleColor}`}>
-            暁 Pomodoro Timer
-          </h1>
+          <div className="flex items-center gap-4">
+            <img src="/logo.png" alt="Akatsuki" className="w-12 h-12 sm:w-16 sm:h-16 rounded-full object-cover" />
+            <h1 className={`text-2xl sm:text-4xl font-bold ${themeClasses.titleColor}`}>
+              Pomodoro Timer
+            </h1>
+          </div>
           <div className="flex gap-2">
             <button
               onClick={() => setShowStats(!showStats)}
