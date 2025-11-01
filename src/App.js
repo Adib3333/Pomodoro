@@ -2,14 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, RotateCcw, Sun, Moon, Music, Upload, SkipForward, Volume2, Plus, Trash2, Check, Download, TrendingUp, Settings } from 'lucide-react';
 
 export default function AkatsukiPomodoro() {
-  // Theme presets
-  const themes = {
-    akatsuki: { primary: 'red', accent: 'purple', name: 'Akatsuki' },
-    itachi: { primary: 'red', accent: 'gray', name: 'Itachi' },
-    obito: { primary: 'orange', accent: 'blue', name: 'Obito' },
-    pain: { primary: 'purple', accent: 'gray', name: 'Pain' }
-  };
-
   const [darkMode, setDarkMode] = useState(true);
   const [currentTheme, setCurrentTheme] = useState('akatsuki');
   const [timeLeft, setTimeLeft] = useState(25 * 60);
@@ -82,7 +74,7 @@ export default function AkatsukiPomodoro() {
     }
   }, [sessionCount, stats.lastDate, stats.streak]);
 
-  // Timer logic with animation
+  // Timer logic
   useEffect(() => {
     let interval = null;
     if (isRunning && timeLeft > 0) {
@@ -90,7 +82,6 @@ export default function AkatsukiPomodoro() {
         setTimeLeft(time => time - 1);
       }, 1000);
     } else if (timeLeft === 0) {
-      // Play notification
       if (customNotificationSound && notificationRef.current) {
         notificationRef.current.src = customNotificationSound;
         notificationRef.current.play();
@@ -98,7 +89,6 @@ export default function AkatsukiPomodoro() {
         notificationRef.current.play();
       }
       
-      // Browser notification
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification(isBreak ? 'Work Session Complete!' : 'Break Complete!', {
           body: isBreak ? 'Time to get back to work!' : 'Time for a break!',
@@ -106,7 +96,6 @@ export default function AkatsukiPomodoro() {
         });
       }
       
-      // Update stats
       if (!isBreak && !isLongBreak) {
         setStats(prev => ({
           ...prev,
@@ -115,7 +104,6 @@ export default function AkatsukiPomodoro() {
         }));
       }
       
-      // Switch between work and break
       if (isBreak || isLongBreak) {
         setTimeLeft(workDuration * 60);
         setIsBreak(false);
@@ -124,7 +112,6 @@ export default function AkatsukiPomodoro() {
         const newCount = sessionCount + 1;
         setSessionCount(newCount);
         
-        // Long break every 4 sessions
         if (newCount % 4 === 0) {
           setTimeLeft(longBreakDuration * 60);
           setIsLongBreak(true);
@@ -138,14 +125,12 @@ export default function AkatsukiPomodoro() {
     return () => clearInterval(interval);
   }, [isRunning, timeLeft, isBreak, isLongBreak, workDuration, breakDuration, longBreakDuration, sessionCount, customNotificationSound]);
 
-  // Request notification permission
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
   }, []);
 
-  // Music player logic
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = volume;
@@ -268,38 +253,80 @@ export default function AkatsukiPomodoro() {
     }
   };
 
-  const getThemeColors = () => {
-    const theme = themes[currentTheme];
-    const colors = {
-      red: { light: 'red-400', dark: 'red-600', darkBg: 'red-900', lightBg: 'red-200' },
-      purple: { light: 'purple-400', dark: 'purple-600', darkBg: 'purple-900', lightBg: 'purple-200' },
-      orange: { light: 'orange-400', dark: 'orange-600', darkBg: 'orange-900', lightBg: 'orange-200' },
-      blue: { light: 'blue-400', dark: 'blue-600', darkBg: 'blue-900', lightBg: 'blue-200' },
-      gray: { light: 'gray-400', dark: 'gray-600', darkBg: 'gray-900', lightBg: 'gray-200' }
-    };
-    return colors[theme.primary];
-  };
-
   const progress = ((isBreak ? breakDuration * 60 : isLongBreak ? longBreakDuration * 60 : workDuration * 60) - timeLeft) / 
                    (isBreak ? breakDuration * 60 : isLongBreak ? longBreakDuration * 60 : workDuration * 60) * 100;
 
-  const themeColor = getThemeColors();
+  // Theme-based color classes
+  const getThemeClasses = () => {
+    switch(currentTheme) {
+      case 'itachi':
+        return {
+          cloudColor: 'text-red-500',
+          titleColor: 'text-red-500',
+          primaryColor: 'text-red-500',
+          primaryBg: darkMode ? 'bg-red-700' : 'bg-red-600',
+          primaryHoverBg: darkMode ? 'hover:bg-red-600' : 'hover:bg-red-500',
+          border: darkMode ? 'border-gray-800' : 'border-gray-300',
+          gradient: 'from-red-700 to-gray-800',
+          buttonBg: darkMode ? 'bg-red-700' : 'bg-red-600',
+          buttonHover: darkMode ? 'hover:bg-red-600' : 'hover:bg-red-500'
+        };
+      case 'obito':
+        return {
+          cloudColor: 'text-orange-400',
+          titleColor: 'text-orange-400',
+          primaryColor: 'text-orange-400',
+          primaryBg: darkMode ? 'bg-orange-600' : 'bg-orange-500',
+          primaryHoverBg: darkMode ? 'hover:bg-orange-500' : 'hover:bg-orange-400',
+          border: darkMode ? 'border-blue-900' : 'border-orange-200',
+          gradient: 'from-orange-600 to-blue-700',
+          buttonBg: darkMode ? 'bg-orange-600' : 'bg-orange-500',
+          buttonHover: darkMode ? 'hover:bg-orange-500' : 'hover:bg-orange-400'
+        };
+      case 'pain':
+        return {
+          cloudColor: 'text-purple-400',
+          titleColor: 'text-purple-400',
+          primaryColor: 'text-purple-400',
+          primaryBg: darkMode ? 'bg-purple-600' : 'bg-purple-500',
+          primaryHoverBg: darkMode ? 'hover:bg-purple-500' : 'hover:bg-purple-400',
+          border: darkMode ? 'border-purple-900' : 'border-purple-200',
+          gradient: 'from-purple-600 to-purple-800',
+          buttonBg: darkMode ? 'bg-purple-600' : 'bg-purple-500',
+          buttonHover: darkMode ? 'hover:bg-purple-500' : 'hover:bg-purple-400'
+        };
+      default: // akatsuki
+        return {
+          cloudColor: 'text-red-400',
+          titleColor: 'text-red-400',
+          primaryColor: 'text-red-400',
+          primaryBg: darkMode ? 'bg-red-600' : 'bg-red-500',
+          primaryHoverBg: darkMode ? 'hover:bg-red-500' : 'hover:bg-red-400',
+          border: darkMode ? 'border-red-900' : 'border-red-200',
+          gradient: 'from-red-600 to-red-800',
+          buttonBg: darkMode ? 'bg-red-600' : 'bg-red-500',
+          buttonHover: darkMode ? 'hover:bg-red-500' : 'hover:bg-red-400'
+        };
+    }
+  };
+
+  const themeClasses = getThemeClasses();
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'bg-gray-900' : 'bg-gray-100'}`}>
       {/* Animated background */}
       <div className="fixed inset-0 opacity-5 pointer-events-none overflow-hidden">
-        <div className={`absolute top-10 left-10 text-${themeColor.light} text-9xl animate-pulse`}>☁</div>
-        <div className={`absolute top-40 right-20 text-${themeColor.light} text-7xl animate-pulse animation-delay-1000`}>☁</div>
-        <div className={`absolute bottom-20 left-1/4 text-${themeColor.light} text-8xl animate-pulse animation-delay-2000`}>☁</div>
-        <div className={`absolute bottom-40 right-1/3 text-${themeColor.light} text-6xl animate-pulse animation-delay-3000`}>☁</div>
+        <div className={`absolute top-10 left-10 ${themeClasses.cloudColor} text-9xl animate-pulse`}>☁</div>
+        <div className={`absolute top-40 right-20 ${themeClasses.cloudColor} text-7xl animate-pulse`} style={{animationDelay: '1s'}}>☁</div>
+        <div className={`absolute bottom-20 left-1/4 ${themeClasses.cloudColor} text-8xl animate-pulse`} style={{animationDelay: '2s'}}>☁</div>
+        <div className={`absolute bottom-40 right-1/3 ${themeClasses.cloudColor} text-6xl animate-pulse`} style={{animationDelay: '3s'}}>☁</div>
       </div>
 
       <div className="relative z-10 container mx-auto px-4 py-4 sm:py-8 max-w-6xl">
         {/* Header */}
         <div className="flex justify-between items-center mb-6 sm:mb-8">
-          <h1 className={`text-2xl sm:text-4xl font-bold text-${themeColor.light}`}>
-            暁 {themes[currentTheme].name} Timer
+          <h1 className={`text-2xl sm:text-4xl font-bold ${themeClasses.titleColor}`}>
+            暁 Pomodoro Timer
           </h1>
           <div className="flex gap-2">
             <button
@@ -332,16 +359,14 @@ export default function AkatsukiPomodoro() {
         {/* Stats Panel */}
         {showStats && (
           <div className={`rounded-2xl p-6 mb-6 shadow-2xl ${
-            darkMode ? `bg-gray-800 border-2 border-${themeColor.darkBg}` : `bg-white border-2 border-${themeColor.lightBg}`
+            darkMode ? `bg-gray-800 border-2 ${themeClasses.border}` : `bg-white border-2 ${themeClasses.border}`
           }`}>
             <div className="flex justify-between items-center mb-4">
-              <h2 className={`text-2xl font-bold text-${themeColor.light}`}>Statistics</h2>
+              <h2 className={`text-2xl font-bold ${themeClasses.primaryColor}`}>Statistics</h2>
               <div className="flex gap-2">
                 <button
                   onClick={exportStats}
-                  className={`px-4 py-2 rounded-lg font-semibold transition-all inline-flex items-center gap-2 ${
-                    darkMode ? `bg-${themeColor.dark} hover:bg-${themeColor.light} text-white` : `bg-${themeColor.dark} hover:bg-${themeColor.light} text-white`
-                  }`}
+                  className={`px-4 py-2 rounded-lg font-semibold transition-all inline-flex items-center gap-2 ${themeClasses.buttonBg} ${themeClasses.buttonHover} text-white`}
                 >
                   <Download size={16} />
                   Export
@@ -358,19 +383,19 @@ export default function AkatsukiPomodoro() {
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                <div className={`text-3xl font-bold text-${themeColor.light}`}>{stats.totalSessions}</div>
+                <div className={`text-3xl font-bold ${themeClasses.primaryColor}`}>{stats.totalSessions}</div>
                 <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Total Sessions</div>
               </div>
               <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                <div className={`text-3xl font-bold text-${themeColor.light}`}>{Math.floor(stats.totalMinutes / 60)}h {stats.totalMinutes % 60}m</div>
+                <div className={`text-3xl font-bold ${themeClasses.primaryColor}`}>{Math.floor(stats.totalMinutes / 60)}h {stats.totalMinutes % 60}m</div>
                 <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Total Time</div>
               </div>
               <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                <div className={`text-3xl font-bold text-${themeColor.light}`}>{stats.streak} 🔥</div>
+                <div className={`text-3xl font-bold ${themeClasses.primaryColor}`}>{stats.streak} 🔥</div>
                 <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Day Streak</div>
               </div>
               <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                <div className={`text-3xl font-bold text-${themeColor.light}`}>{sessionCount}</div>
+                <div className={`text-3xl font-bold ${themeClasses.primaryColor}`}>{sessionCount}</div>
                 <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Today's Sessions</div>
               </div>
             </div>
@@ -380,26 +405,26 @@ export default function AkatsukiPomodoro() {
         {/* Settings Panel */}
         {showSettings && (
           <div className={`rounded-2xl p-6 mb-6 shadow-2xl ${
-            darkMode ? `bg-gray-800 border-2 border-${themeColor.darkBg}` : `bg-white border-2 border-${themeColor.lightBg}`
+            darkMode ? `bg-gray-800 border-2 ${themeClasses.border}` : `bg-white border-2 ${themeClasses.border}`
           }`}>
-            <h2 className={`text-2xl font-bold mb-4 text-${themeColor.light}`}>Settings</h2>
+            <h2 className={`text-2xl font-bold mb-4 ${themeClasses.primaryColor}`}>Settings</h2>
             
             <div className="mb-4">
               <label className={`block text-sm mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                 Theme
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {Object.entries(themes).map(([key, theme]) => (
+                {['akatsuki', 'itachi', 'obito', 'pain'].map((themeName) => (
                   <button
-                    key={key}
-                    onClick={() => setCurrentTheme(key)}
-                    className={`py-2 px-4 rounded-lg font-semibold transition-all ${
-                      currentTheme === key
-                        ? (darkMode ? `bg-${themeColor.dark} text-white` : `bg-${themeColor.dark} text-white`)
+                    key={themeName}
+                    onClick={() => setCurrentTheme(themeName)}
+                    className={`py-2 px-4 rounded-lg font-semibold transition-all capitalize ${
+                      currentTheme === themeName
+                        ? `${themeClasses.buttonBg} text-white`
                         : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300')
                     }`}
                   >
-                    {theme.name}
+                    {themeName}
                   </button>
                 ))}
               </div>
@@ -436,7 +461,7 @@ export default function AkatsukiPomodoro() {
               <input
                 ref={soundInputRef}
                 type="file"
-                accept="audio/*"
+                accept="audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/wav,audio/ogg,.mp3,.m4a,.wav,.ogg"
                 onChange={handleSoundUpload}
                 className="hidden"
               />
@@ -447,7 +472,7 @@ export default function AkatsukiPomodoro() {
         <div className="grid md:grid-cols-3 gap-6">
           {/* Main Timer Card */}
           <div className={`md:col-span-2 rounded-2xl p-8 shadow-2xl ${
-            darkMode ? `bg-gray-800 border-2 border-${themeColor.darkBg}` : `bg-white border-2 border-${themeColor.lightBg}`
+            darkMode ? `bg-gray-800 border-2 ${themeClasses.border}` : `bg-white border-2 ${themeClasses.border}`
           }`}>
             {/* Timer Display */}
             <div className="text-center mb-8">
@@ -456,12 +481,12 @@ export default function AkatsukiPomodoro() {
                   ? (darkMode ? 'text-blue-400' : 'text-blue-600')
                   : isBreak 
                     ? (darkMode ? 'text-green-400' : 'text-green-600')
-                    : (darkMode ? `text-${themeColor.light}` : `text-${themeColor.dark}`)
+                    : themeClasses.primaryColor
               } ${isRunning ? 'animate-pulse' : ''}`}>
                 {formatTime(timeLeft)}
               </div>
               <div className={`text-lg sm:text-xl mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                {isLongBreak ? '長休憩 Long Break' : isBreak ? '休憩 Break Time' : '作業 Work Time'}
+                {isLongBreak ? 'Long Break' : isBreak ? 'Break Time' : 'Work Time'}
               </div>
               <div className={`text-sm ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
                 Sessions: {sessionCount} ☁ | Streak: {stats.streak} 🔥
@@ -476,7 +501,7 @@ export default function AkatsukiPomodoro() {
                     ? 'bg-gradient-to-r from-blue-500 to-blue-600'
                     : isBreak 
                       ? 'bg-gradient-to-r from-green-500 to-green-600'
-                      : `bg-gradient-to-r from-${themeColor.dark} to-${themeColor.light}`
+                      : `bg-gradient-to-r ${themeClasses.gradient}`
                 }`}
                 style={{ width: `${progress}%` }}
               />
@@ -486,9 +511,7 @@ export default function AkatsukiPomodoro() {
             <div className="flex justify-center gap-4 mb-8">
               <button
                 onClick={toggleTimer}
-                className={`p-4 rounded-full transition-all transform hover:scale-110 ${
-                  darkMode ? `bg-${themeColor.dark} hover:bg-${themeColor.light} text-white` : `bg-${themeColor.dark} hover:bg-${themeColor.light} text-white`
-                }`}
+                className={`p-4 rounded-full transition-all transform hover:scale-110 ${themeClasses.buttonBg} ${themeClasses.buttonHover} text-white`}
               >
                 {isRunning ? <Pause size={32} /> : <Play size={32} />}
               </button>
@@ -510,7 +533,7 @@ export default function AkatsukiPomodoro() {
                   onClick={() => handlePresetChange(preset)}
                   className={`py-3 px-4 rounded-lg font-semibold transition-all ${
                     selectedPreset === preset
-                      ? (darkMode ? `bg-${themeColor.dark} text-white` : `bg-${themeColor.dark} text-white`)
+                      ? `${themeClasses.buttonBg} text-white`
                       : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300')
                   }`}
                 >
@@ -521,7 +544,7 @@ export default function AkatsukiPomodoro() {
                 onClick={handleCustomTimer}
                 className={`py-3 px-4 rounded-lg font-semibold transition-all ${
                   selectedPreset === 'custom'
-                    ? (darkMode ? `bg-${themeColor.dark} text-white` : `bg-${themeColor.dark} text-white`)
+                    ? `${themeClasses.buttonBg} text-white`
                     : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300')
                 }`}
               >
@@ -563,9 +586,7 @@ export default function AkatsukiPomodoro() {
                   </div>
                   <button
                     onClick={applyCustomTimer}
-                    className={`px-6 py-2 rounded font-semibold ${
-                      darkMode ? `bg-${themeColor.dark} hover:bg-${themeColor.light} text-white` : `bg-${themeColor.dark} hover:bg-${themeColor.light} text-white`
-                    }`}
+                    className={`px-6 py-2 rounded font-semibold ${themeClasses.buttonBg} ${themeClasses.buttonHover} text-white`}
                   >
                     Apply
                   </button>
@@ -576,9 +597,9 @@ export default function AkatsukiPomodoro() {
 
           {/* Task List */}
           <div className={`rounded-2xl p-6 shadow-2xl ${
-            darkMode ? `bg-gray-800 border-2 border-${themeColor.darkBg}` : `bg-white border-2 border-${themeColor.lightBg}`
+            darkMode ? `bg-gray-800 border-2 ${themeClasses.border}` : `bg-white border-2 ${themeClasses.border}`
           }`}>
-            <h2 className={`text-2xl font-bold mb-4 text-${themeColor.light}`}>Tasks</h2>
+            <h2 className={`text-2xl font-bold mb-4 ${themeClasses.primaryColor}`}>Tasks</h2>
             
             <div className="flex gap-2 mb-4">
               <input
@@ -593,9 +614,7 @@ export default function AkatsukiPomodoro() {
               />
               <button
                 onClick={addTask}
-                className={`p-2 rounded transition-all ${
-                  darkMode ? `bg-${themeColor.dark} hover:bg-${themeColor.light} text-white` : `bg-${themeColor.dark} hover:bg-${themeColor.light} text-white`
-                }`}
+                className={`p-2 rounded transition-all ${themeClasses.buttonBg} ${themeClasses.buttonHover} text-white`}
               >
                 <Plus size={24} />
               </button>
@@ -618,7 +637,7 @@ export default function AkatsukiPomodoro() {
                       onClick={() => toggleTask(task.id)}
                       className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center ${
                         task.completed
-                          ? `bg-${themeColor.dark} border-${themeColor.dark}`
+                          ? `${themeClasses.buttonBg} border-transparent`
                           : (darkMode ? 'border-gray-500' : 'border-gray-400')
                       }`}
                     >
@@ -741,7 +760,7 @@ export default function AkatsukiPomodoro() {
           <input
             ref={fileInputRef}
             type="file"
-            accept="audio/*"
+            accept="audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/wav,audio/ogg,.mp3,.m4a,.wav,.ogg"
             multiple
             onChange={handleFileUpload}
             className="hidden"
@@ -759,18 +778,6 @@ export default function AkatsukiPomodoro() {
           src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBD"
         />
       </div>
-
-      <style jsx>{`
-        .animation-delay-1000 {
-          animation-delay: 1s;
-        }
-        .animation-delay-2000 {
-          animation-delay: 2s;
-        }
-        .animation-delay-3000 {
-          animation-delay: 3s;
-        }
-      `}</style>
     </div>
   );
 }
