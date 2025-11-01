@@ -1,0 +1,776 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, Pause, RotateCcw, Sun, Moon, Music, Upload, SkipForward, Volume2, Plus, Trash2, Check, Download, TrendingUp, Settings } from 'lucide-react';
+
+export default function AkatsukiPomodoro() {
+  // Theme presets
+  const themes = {
+    akatsuki: { primary: 'red', accent: 'purple', name: 'Akatsuki' },
+    itachi: { primary: 'red', accent: 'gray', name: 'Itachi' },
+    obito: { primary: 'orange', accent: 'blue', name: 'Obito' },
+    pain: { primary: 'purple', accent: 'gray', name: 'Pain' }
+  };
+
+  const [darkMode, setDarkMode] = useState(true);
+  const [currentTheme, setCurrentTheme] = useState('akatsuki');
+  const [timeLeft, setTimeLeft] = useState(25 * 60);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isBreak, setIsBreak] = useState(false);
+  const [workDuration, setWorkDuration] = useState(25);
+  const [breakDuration, setBreakDuration] = useState(5);
+  const [longBreakDuration, setLongBreakDuration] = useState(15);
+  const [selectedPreset, setSelectedPreset] = useState('25:5');
+  const [showCustom, setShowCustom] = useState(false);
+  const [sessionCount, setSessionCount] = useState(0);
+  const [isLongBreak, setIsLongBreak] = useState(false);
+  
+  // Tasks
+  const [tasks, setTasks] = useState([]);
+  const [newTask, setNewTask] = useState('');
+  
+  // Stats
+  const [stats, setStats] = useState({ totalSessions: 0, totalMinutes: 0, streak: 0, lastDate: null });
+  const [showStats, setShowStats] = useState(false);
+  
+  // Settings
+  const [showSettings, setShowSettings] = useState(false);
+  const [customNotificationSound, setCustomNotificationSound] = useState(null);
+  
+  // Music player states
+  const [playlist, setPlaylist] = useState([]);
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [volume, setVolume] = useState(0.7);
+  
+  const audioRef = useRef(null);
+  const notificationRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const soundInputRef = useRef(null);
+
+  // Load data from localStorage
+  useEffect(() => {
+    const savedStats = localStorage.getItem('pomodoroStats');
+    const savedTasks = localStorage.getItem('pomodoroTasks');
+    const savedTheme = localStorage.getItem('pomodoroTheme');
+    
+    if (savedStats) setStats(JSON.parse(savedStats));
+    if (savedTasks) setTasks(JSON.parse(savedTasks));
+    if (savedTheme) setCurrentTheme(savedTheme);
+  }, []);
+
+  // Save stats
+  useEffect(() => {
+    localStorage.setItem('pomodoroStats', JSON.stringify(stats));
+  }, [stats]);
+
+  // Save tasks
+  useEffect(() => {
+    localStorage.setItem('pomodoroTasks', JSON.stringify(tasks));
+  }, [tasks]);
+
+  // Save theme
+  useEffect(() => {
+    localStorage.setItem('pomodoroTheme', currentTheme);
+  }, [currentTheme]);
+
+  // Update streak
+  useEffect(() => {
+    const today = new Date().toDateString();
+    if (stats.lastDate !== today && sessionCount > 0) {
+      const yesterday = new Date(Date.now() - 86400000).toDateString();
+      const newStreak = stats.lastDate === yesterday ? stats.streak + 1 : 1;
+      setStats(prev => ({ ...prev, streak: newStreak, lastDate: today }));
+    }
+  }, [sessionCount, stats.lastDate, stats.streak]);
+
+  // Timer logic with animation
+  useEffect(() => {
+    let interval = null;
+    if (isRunning && timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft(time => time - 1);
+      }, 1000);
+    } else if (timeLeft === 0) {
+      // Play notification
+      if (customNotificationSound && notificationRef.current) {
+        notificationRef.current.src = customNotificationSound;
+        notificationRef.current.play();
+      } else if (notificationRef.current) {
+        notificationRef.current.play();
+      }
+      
+      // Browser notification
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(isBreak ? 'Work Session Complete!' : 'Break Complete!', {
+          body: isBreak ? 'Time to get back to work!' : 'Time for a break!',
+          icon: '☁'
+        });
+      }
+      
+      // Update stats
+      if (!isBreak && !isLongBreak) {
+        setStats(prev => ({
+          ...prev,
+          totalSessions: prev.totalSessions + 1,
+          totalMinutes: prev.totalMinutes + workDuration
+        }));
+      }
+      
+      // Switch between work and break
+      if (isBreak || isLongBreak) {
+        setTimeLeft(workDuration * 60);
+        setIsBreak(false);
+        setIsLongBreak(false);
+      } else {
+        const newCount = sessionCount + 1;
+        setSessionCount(newCount);
+        
+        // Long break every 4 sessions
+        if (newCount % 4 === 0) {
+          setTimeLeft(longBreakDuration * 60);
+          setIsLongBreak(true);
+        } else {
+          setTimeLeft(breakDuration * 60);
+          setIsBreak(true);
+        }
+      }
+      setIsRunning(false);
+    }
+    return () => clearInterval(interval);
+  }, [isRunning, timeLeft, isBreak, isLongBreak, workDuration, breakDuration, longBreakDuration, sessionCount, customNotificationSound]);
+
+  // Request notification permission
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  // Music player logic
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+  }, [volume]);
+
+  useEffect(() => {
+    if (audioRef.current && playlist.length > 0) {
+      if (isPlaying) {
+        audioRef.current.play();
+      } else {
+        audioRef.current.pause();
+      }
+    }
+  }, [isPlaying, currentTrackIndex, playlist]);
+
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handlePresetChange = (preset) => {
+    setSelectedPreset(preset);
+    setShowCustom(false);
+    const [work, breakTime] = preset.split(':').map(Number);
+    setWorkDuration(work);
+    setBreakDuration(breakTime);
+    setTimeLeft(work * 60);
+    setIsBreak(false);
+    setIsLongBreak(false);
+    setIsRunning(false);
+  };
+
+  const handleCustomTimer = () => {
+    setShowCustom(true);
+    setSelectedPreset('custom');
+  };
+
+  const applyCustomTimer = () => {
+    setTimeLeft(workDuration * 60);
+    setIsBreak(false);
+    setIsLongBreak(false);
+    setIsRunning(false);
+  };
+
+  const toggleTimer = () => {
+    setIsRunning(!isRunning);
+  };
+
+  const resetTimer = () => {
+    setIsRunning(false);
+    setTimeLeft(workDuration * 60);
+    setIsBreak(false);
+    setIsLongBreak(false);
+  };
+
+  const handleFileUpload = (e) => {
+    const files = Array.from(e.target.files);
+    const newTracks = files.map(file => ({
+      name: file.name,
+      url: URL.createObjectURL(file)
+    }));
+    setPlaylist([...playlist, ...newTracks]);
+  };
+
+  const handleSoundUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setCustomNotificationSound(url);
+    }
+  };
+
+  const toggleMusic = () => {
+    setIsPlaying(!isPlaying);
+  };
+
+  const nextTrack = () => {
+    if (playlist.length > 0) {
+      setCurrentTrackIndex((currentTrackIndex + 1) % playlist.length);
+    }
+  };
+
+  const handleTrackEnd = () => {
+    nextTrack();
+  };
+
+  const addTask = () => {
+    if (newTask.trim()) {
+      setTasks([...tasks, { id: Date.now(), text: newTask, completed: false }]);
+      setNewTask('');
+    }
+  };
+
+  const toggleTask = (id) => {
+    setTasks(tasks.map(task => 
+      task.id === id ? { ...task, completed: !task.completed } : task
+    ));
+  };
+
+  const deleteTask = (id) => {
+    setTasks(tasks.filter(task => task.id !== id));
+  };
+
+  const exportStats = () => {
+    const csvContent = `Date,Total Sessions,Total Minutes,Current Streak\n${new Date().toLocaleDateString()},${stats.totalSessions},${stats.totalMinutes},${stats.streak}`;
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'pomodoro-stats.csv';
+    a.click();
+  };
+
+  const resetStats = () => {
+    if (window.confirm('Are you sure you want to reset all statistics?')) {
+      setStats({ totalSessions: 0, totalMinutes: 0, streak: 0, lastDate: null });
+      setSessionCount(0);
+    }
+  };
+
+  const getThemeColors = () => {
+    const theme = themes[currentTheme];
+    const colors = {
+      red: { light: 'red-400', dark: 'red-600', darkBg: 'red-900', lightBg: 'red-200' },
+      purple: { light: 'purple-400', dark: 'purple-600', darkBg: 'purple-900', lightBg: 'purple-200' },
+      orange: { light: 'orange-400', dark: 'orange-600', darkBg: 'orange-900', lightBg: 'orange-200' },
+      blue: { light: 'blue-400', dark: 'blue-600', darkBg: 'blue-900', lightBg: 'blue-200' },
+      gray: { light: 'gray-400', dark: 'gray-600', darkBg: 'gray-900', lightBg: 'gray-200' }
+    };
+    return colors[theme.primary];
+  };
+
+  const progress = ((isBreak ? breakDuration * 60 : isLongBreak ? longBreakDuration * 60 : workDuration * 60) - timeLeft) / 
+                   (isBreak ? breakDuration * 60 : isLongBreak ? longBreakDuration * 60 : workDuration * 60) * 100;
+
+  const themeColor = getThemeColors();
+
+  return (
+    <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'bg-gray-900' : 'bg-gray-100'}`}>
+      {/* Animated background */}
+      <div className="fixed inset-0 opacity-5 pointer-events-none overflow-hidden">
+        <div className={`absolute top-10 left-10 text-${themeColor.light} text-9xl animate-pulse`}>☁</div>
+        <div className={`absolute top-40 right-20 text-${themeColor.light} text-7xl animate-pulse animation-delay-1000`}>☁</div>
+        <div className={`absolute bottom-20 left-1/4 text-${themeColor.light} text-8xl animate-pulse animation-delay-2000`}>☁</div>
+        <div className={`absolute bottom-40 right-1/3 text-${themeColor.light} text-6xl animate-pulse animation-delay-3000`}>☁</div>
+      </div>
+
+      <div className="relative z-10 container mx-auto px-4 py-4 sm:py-8 max-w-6xl">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-6 sm:mb-8">
+          <h1 className={`text-2xl sm:text-4xl font-bold text-${themeColor.light}`}>
+            暁 {themes[currentTheme].name} Timer
+          </h1>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowStats(!showStats)}
+              className={`p-3 rounded-full transition-colors ${
+                darkMode ? 'bg-gray-800 text-blue-400 hover:bg-gray-700' : 'bg-white text-blue-600 hover:bg-gray-200'
+              }`}
+            >
+              <TrendingUp size={24} />
+            </button>
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className={`p-3 rounded-full transition-colors ${
+                darkMode ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' : 'bg-white text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              <Settings size={24} />
+            </button>
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className={`p-3 rounded-full transition-colors ${
+                darkMode ? 'bg-gray-800 text-yellow-400 hover:bg-gray-700' : 'bg-white text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {darkMode ? <Sun size={24} /> : <Moon size={24} />}
+            </button>
+          </div>
+        </div>
+
+        {/* Stats Panel */}
+        {showStats && (
+          <div className={`rounded-2xl p-6 mb-6 shadow-2xl ${
+            darkMode ? `bg-gray-800 border-2 border-${themeColor.darkBg}` : `bg-white border-2 border-${themeColor.lightBg}`
+          }`}>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className={`text-2xl font-bold text-${themeColor.light}`}>Statistics</h2>
+              <div className="flex gap-2">
+                <button
+                  onClick={exportStats}
+                  className={`px-4 py-2 rounded-lg font-semibold transition-all inline-flex items-center gap-2 ${
+                    darkMode ? `bg-${themeColor.dark} hover:bg-${themeColor.light} text-white` : `bg-${themeColor.dark} hover:bg-${themeColor.light} text-white`
+                  }`}
+                >
+                  <Download size={16} />
+                  Export
+                </button>
+                <button
+                  onClick={resetStats}
+                  className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                    darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-300 hover:bg-gray-400 text-gray-800'
+                  }`}
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                <div className={`text-3xl font-bold text-${themeColor.light}`}>{stats.totalSessions}</div>
+                <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Total Sessions</div>
+              </div>
+              <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                <div className={`text-3xl font-bold text-${themeColor.light}`}>{Math.floor(stats.totalMinutes / 60)}h {stats.totalMinutes % 60}m</div>
+                <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Total Time</div>
+              </div>
+              <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                <div className={`text-3xl font-bold text-${themeColor.light}`}>{stats.streak} 🔥</div>
+                <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Day Streak</div>
+              </div>
+              <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                <div className={`text-3xl font-bold text-${themeColor.light}`}>{sessionCount}</div>
+                <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Today's Sessions</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Settings Panel */}
+        {showSettings && (
+          <div className={`rounded-2xl p-6 mb-6 shadow-2xl ${
+            darkMode ? `bg-gray-800 border-2 border-${themeColor.darkBg}` : `bg-white border-2 border-${themeColor.lightBg}`
+          }`}>
+            <h2 className={`text-2xl font-bold mb-4 text-${themeColor.light}`}>Settings</h2>
+            
+            <div className="mb-4">
+              <label className={`block text-sm mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Theme
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {Object.entries(themes).map(([key, theme]) => (
+                  <button
+                    key={key}
+                    onClick={() => setCurrentTheme(key)}
+                    className={`py-2 px-4 rounded-lg font-semibold transition-all ${
+                      currentTheme === key
+                        ? (darkMode ? `bg-${themeColor.dark} text-white` : `bg-${themeColor.dark} text-white`)
+                        : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300')
+                    }`}
+                  >
+                    {theme.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className={`block text-sm mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Long Break Duration (min)
+              </label>
+              <input
+                type="number"
+                value={longBreakDuration}
+                onChange={(e) => setLongBreakDuration(Number(e.target.value))}
+                className={`w-full px-3 py-2 rounded ${
+                  darkMode ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-900'
+                }`}
+                min="1"
+              />
+            </div>
+
+            <div>
+              <label className={`block text-sm mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Custom Notification Sound
+              </label>
+              <button
+                onClick={() => soundInputRef.current?.click()}
+                className={`px-4 py-2 rounded-lg font-semibold transition-all inline-flex items-center gap-2 ${
+                  darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-300 hover:bg-gray-400 text-gray-800'
+                }`}
+              >
+                <Upload size={16} />
+                {customNotificationSound ? 'Sound Uploaded ✓' : 'Upload Sound'}
+              </button>
+              <input
+                ref={soundInputRef}
+                type="file"
+                accept="audio/*"
+                onChange={handleSoundUpload}
+                className="hidden"
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="grid md:grid-cols-3 gap-6">
+          {/* Main Timer Card */}
+          <div className={`md:col-span-2 rounded-2xl p-8 shadow-2xl ${
+            darkMode ? `bg-gray-800 border-2 border-${themeColor.darkBg}` : `bg-white border-2 border-${themeColor.lightBg}`
+          }`}>
+            {/* Timer Display */}
+            <div className="text-center mb-8">
+              <div className={`text-5xl sm:text-7xl font-bold mb-4 transition-all ${
+                isLongBreak
+                  ? (darkMode ? 'text-blue-400' : 'text-blue-600')
+                  : isBreak 
+                    ? (darkMode ? 'text-green-400' : 'text-green-600')
+                    : (darkMode ? `text-${themeColor.light}` : `text-${themeColor.dark}`)
+              } ${isRunning ? 'animate-pulse' : ''}`}>
+                {formatTime(timeLeft)}
+              </div>
+              <div className={`text-lg sm:text-xl mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                {isLongBreak ? '長休憩 Long Break' : isBreak ? '休憩 Break Time' : '作業 Work Time'}
+              </div>
+              <div className={`text-sm ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+                Sessions: {sessionCount} ☁ | Streak: {stats.streak} 🔥
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div className={`w-full h-3 rounded-full mb-8 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>
+              <div
+                className={`h-full rounded-full transition-all duration-1000 ${
+                  isLongBreak
+                    ? 'bg-gradient-to-r from-blue-500 to-blue-600'
+                    : isBreak 
+                      ? 'bg-gradient-to-r from-green-500 to-green-600'
+                      : `bg-gradient-to-r from-${themeColor.dark} to-${themeColor.light}`
+                }`}
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+
+            {/* Timer Controls */}
+            <div className="flex justify-center gap-4 mb-8">
+              <button
+                onClick={toggleTimer}
+                className={`p-4 rounded-full transition-all transform hover:scale-110 ${
+                  darkMode ? `bg-${themeColor.dark} hover:bg-${themeColor.light} text-white` : `bg-${themeColor.dark} hover:bg-${themeColor.light} text-white`
+                }`}
+              >
+                {isRunning ? <Pause size={32} /> : <Play size={32} />}
+              </button>
+              <button
+                onClick={resetTimer}
+                className={`p-4 rounded-full transition-all transform hover:scale-110 ${
+                  darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-300 hover:bg-gray-400 text-gray-800'
+                }`}
+              >
+                <RotateCcw size={32} />
+              </button>
+            </div>
+
+            {/* Preset Options */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+              {['20:5', '25:5', '35:10'].map(preset => (
+                <button
+                  key={preset}
+                  onClick={() => handlePresetChange(preset)}
+                  className={`py-3 px-4 rounded-lg font-semibold transition-all ${
+                    selectedPreset === preset
+                      ? (darkMode ? `bg-${themeColor.dark} text-white` : `bg-${themeColor.dark} text-white`)
+                      : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300')
+                  }`}
+                >
+                  {preset}
+                </button>
+              ))}
+              <button
+                onClick={handleCustomTimer}
+                className={`py-3 px-4 rounded-lg font-semibold transition-all ${
+                  selectedPreset === 'custom'
+                    ? (darkMode ? `bg-${themeColor.dark} text-white` : `bg-${themeColor.dark} text-white`)
+                    : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300')
+                }`}
+              >
+                Custom
+              </button>
+            </div>
+
+            {/* Custom Timer Input */}
+            {showCustom && (
+              <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                <div className="flex flex-col sm:flex-row gap-4 items-end">
+                  <div className="flex-1">
+                    <label className={`block text-sm mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Work (min)
+                    </label>
+                    <input
+                      type="number"
+                      value={workDuration}
+                      onChange={(e) => setWorkDuration(Number(e.target.value))}
+                      className={`w-full px-3 py-2 rounded ${
+                        darkMode ? 'bg-gray-600 text-white' : 'bg-white text-gray-900'
+                      }`}
+                      min="1"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className={`block text-sm mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Break (min)
+                    </label>
+                    <input
+                      type="number"
+                      value={breakDuration}
+                      onChange={(e) => setBreakDuration(Number(e.target.value))}
+                      className={`w-full px-3 py-2 rounded ${
+                        darkMode ? 'bg-gray-600 text-white' : 'bg-white text-gray-900'
+                      }`}
+                      min="1"
+                    />
+                  </div>
+                  <button
+                    onClick={applyCustomTimer}
+                    className={`px-6 py-2 rounded font-semibold ${
+                      darkMode ? `bg-${themeColor.dark} hover:bg-${themeColor.light} text-white` : `bg-${themeColor.dark} hover:bg-${themeColor.light} text-white`
+                    }`}
+                  >
+                    Apply
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Task List */}
+          <div className={`rounded-2xl p-6 shadow-2xl ${
+            darkMode ? `bg-gray-800 border-2 border-${themeColor.darkBg}` : `bg-white border-2 border-${themeColor.lightBg}`
+          }`}>
+            <h2 className={`text-2xl font-bold mb-4 text-${themeColor.light}`}>Tasks</h2>
+            
+            <div className="flex gap-2 mb-4">
+              <input
+                type="text"
+                value={newTask}
+                onChange={(e) => setNewTask(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && addTask()}
+                placeholder="Add a task..."
+                className={`flex-1 px-3 py-2 rounded ${
+                  darkMode ? 'bg-gray-700 text-white placeholder-gray-400' : 'bg-gray-100 text-gray-900 placeholder-gray-500'
+                }`}
+              />
+              <button
+                onClick={addTask}
+                className={`p-2 rounded transition-all ${
+                  darkMode ? `bg-${themeColor.dark} hover:bg-${themeColor.light} text-white` : `bg-${themeColor.dark} hover:bg-${themeColor.light} text-white`
+                }`}
+              >
+                <Plus size={24} />
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {tasks.length === 0 ? (
+                <p className={`text-center py-4 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                  No tasks yet. Add one to get started!
+                </p>
+              ) : (
+                tasks.map(task => (
+                  <div
+                    key={task.id}
+                    className={`flex items-center gap-2 p-3 rounded-lg ${
+                      darkMode ? 'bg-gray-700' : 'bg-gray-100'
+                    }`}
+                  >
+                    <button
+                      onClick={() => toggleTask(task.id)}
+                      className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center ${
+                        task.completed
+                          ? `bg-${themeColor.dark} border-${themeColor.dark}`
+                          : (darkMode ? 'border-gray-500' : 'border-gray-400')
+                      }`}
+                    >
+                      {task.completed && <Check size={16} className="text-white" />}
+                    </button>
+                    <span className={`flex-1 ${task.completed ? 'line-through opacity-50' : ''} ${
+                      darkMode ? 'text-white' : 'text-gray-900'
+                    }`}>
+                      {task.text}
+                    </span>
+                    <button
+                      onClick={() => deleteTask(task.id)}
+                      className={`flex-shrink-0 p-1 rounded hover:bg-red-600 transition-colors ${
+                        darkMode ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-white'
+                      }`}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Music Player */}
+        <div className={`mt-6 rounded-2xl p-6 shadow-2xl ${
+          darkMode ? 'bg-gray-800 border-2 border-purple-900' : 'bg-white border-2 border-purple-200'
+        }`}>
+          <div className="flex items-center gap-3 mb-4">
+            <Music className={darkMode ? 'text-purple-400' : 'text-purple-600'} size={24} />
+            <h2 className={`text-2xl font-bold ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>
+              Music Player
+            </h2>
+          </div>
+
+          {playlist.length === 0 ? (
+            <div className="text-center py-8">
+              <p className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                No tracks loaded. Upload your music to begin.
+              </p>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className={`px-6 py-3 rounded-lg font-semibold transition-all inline-flex items-center gap-2 ${
+                  darkMode ? 'bg-purple-700 hover:bg-purple-600 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'
+                }`}
+              >
+                <Upload size={20} />
+                Upload Music
+              </button>
+            </div>
+          ) : (
+            <div>
+              <div className={`mb-4 p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                <div className={`text-lg font-semibold mb-1 truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                  {playlist[currentTrackIndex]?.name || 'No track'}
+                </div>
+                <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  Track {currentTrackIndex + 1} of {playlist.length}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4 mb-4">
+                <button
+                  onClick={toggleMusic}
+                  className={`p-3 rounded-full transition-all ${
+                    darkMode ? 'bg-purple-700 hover:bg-purple-600 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'
+                  }`}
+                >
+                  {isPlaying ? <Pause size={24} /> : <Play size={24} />}
+                </button>
+                <button
+                  onClick={nextTrack}
+                  className={`p-3 rounded-full transition-all ${
+                    darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-300 hover:bg-gray-400 text-gray-800'
+                  }`}
+                >
+                  <SkipForward size={24} />
+                </button>
+                <div className="flex-1 flex items-center gap-3 min-w-[200px]">
+                  <Volume2 className={darkMode ? 'text-gray-400' : 'text-gray-600'} size={20} />
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={volume}
+                    onChange={(e) => setVolume(Number(e.target.value))}
+                    className="flex-1"
+                  />
+                </div>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`p-3 rounded-full transition-all ${
+                    darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-300 hover:bg-gray-400 text-gray-800'
+                  }`}
+                >
+                  <Upload size={20} />
+                </button>
+              </div>
+
+              <div className={`max-h-32 overflow-y-auto rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                {playlist.map((track, index) => (
+                  <div
+                    key={index}
+                    onClick={() => setCurrentTrackIndex(index)}
+                    className={`px-4 py-2 cursor-pointer transition-colors truncate ${
+                      index === currentTrackIndex
+                        ? (darkMode ? 'bg-purple-900 text-white' : 'bg-purple-200 text-purple-900')
+                        : (darkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-200 text-gray-700')
+                    }`}
+                  >
+                    {track.name}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="audio/*"
+            multiple
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+        </div>
+
+        {/* Hidden audio elements */}
+        <audio
+          ref={audioRef}
+          src={playlist[currentTrackIndex]?.url}
+          onEnded={handleTrackEnd}
+        />
+        <audio
+          ref={notificationRef}
+          src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBD"
+        />
+      </div>
+
+      <style jsx>{`
+        .animation-delay-1000 {
+          animation-delay: 1s;
+        }
+        .animation-delay-2000 {
+          animation-delay: 2s;
+        }
+        .animation-delay-3000 {
+          animation-delay: 3s;
+        }
+      `}</style>
+    </div>
+  );
+}
