@@ -1,5 +1,74 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, RotateCcw, Sun, Moon, Music, Upload, SkipForward, Volume2, Plus, Trash2, Check, Download, TrendingUp, Settings, X, Calendar, Target, Zap } from 'lucide-react';
+
+// IndexedDB utilities for music storage
+const DB_NAME = 'PomodoroMusicDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'musicFiles';
+
+const openDB = () => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+  });
+};
+
+const saveFileToIndexedDB = async (id, file) => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.put({ id, file, name: file.name });
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+};
+
+const loadFileFromIndexedDB = async (id) => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], 'readonly');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.get(id);
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+};
+
+const deleteFileFromIndexedDB = async (id) => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.delete(id);
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+};
+
+const clearAllFilesFromIndexedDB = async () => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.clear();
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+};
 
 export default function AkatsukiPomodoro() {
   const [darkMode, setDarkMode] = useState(true);
@@ -14,6 +83,10 @@ export default function AkatsukiPomodoro() {
   const [showCustom, setShowCustom] = useState(false);
   const [sessionCount, setSessionCount] = useState(0);
   const [isLongBreak, setIsLongBreak] = useState(false);
+
+  // Timestamp-based timer state
+  const [timerStartTime, setTimerStartTime] = useState(null);
+  const [timerDuration, setTimerDuration] = useState(25 * 60);
   
   // Tasks
   const [tasks, setTasks] = useState([]);
@@ -41,40 +114,81 @@ export default function AkatsukiPomodoro() {
   const fileInputRef = useRef(null);
   const soundInputRef = useRef(null);
 
-  // Load data from localStorage
+  // Load data from localStorage and IndexedDB
   useEffect(() => {
-    const savedStats = localStorage.getItem('pomodoroStats');
-    const savedTasks = localStorage.getItem('pomodoroTasks');
-    const savedTheme = localStorage.getItem('pomodoroTheme');
-    const savedHistory = localStorage.getItem('pomodoroHistory');
-    const savedGoal = localStorage.getItem('pomodoroGoal');
-    const savedAutoStart = localStorage.getItem('pomodoroAutoStart');
-    const savedSession = localStorage.getItem('pomodoroSession');
-    
-    if (savedStats) setStats(JSON.parse(savedStats));
-    if (savedTasks) setTasks(JSON.parse(savedTasks));
-    if (savedTheme) setCurrentTheme(savedTheme);
-    if (savedHistory) setSessionHistory(JSON.parse(savedHistory));
-    if (savedGoal) setDailyGoal(Number(savedGoal));
-    if (savedAutoStart) setAutoStartNext(JSON.parse(savedAutoStart));
-    
-    // Restore session
-    if (savedSession) {
-      const session = JSON.parse(savedSession);
-      const now = Date.now();
-      const elapsed = Math.floor((now - session.timestamp) / 1000);
-      const newTimeLeft = Math.max(0, session.timeLeft - elapsed);
-      
-      if (newTimeLeft > 0 && session.isRunning) {
-        setTimeLeft(newTimeLeft);
-        setIsBreak(session.isBreak);
-        setIsLongBreak(session.isLongBreak);
-        setWorkDuration(session.workDuration);
-        setBreakDuration(session.breakDuration);
-        setSessionCount(session.sessionCount);
-        // Don't auto-start, just restore state
+    const loadData = async () => {
+      const savedStats = localStorage.getItem('pomodoroStats');
+      const savedTasks = localStorage.getItem('pomodoroTasks');
+      const savedTheme = localStorage.getItem('pomodoroTheme');
+      const savedHistory = localStorage.getItem('pomodoroHistory');
+      const savedGoal = localStorage.getItem('pomodoroGoal');
+      const savedAutoStart = localStorage.getItem('pomodoroAutoStart');
+      const savedSession = localStorage.getItem('pomodoroSession');
+      const savedPlaylist = localStorage.getItem('pomodoroPlaylist');
+
+      if (savedStats) setStats(JSON.parse(savedStats));
+      if (savedTasks) setTasks(JSON.parse(savedTasks));
+      if (savedTheme) setCurrentTheme(savedTheme);
+      if (savedHistory) setSessionHistory(JSON.parse(savedHistory));
+      if (savedGoal) setDailyGoal(Number(savedGoal));
+      if (savedAutoStart) setAutoStartNext(JSON.parse(savedAutoStart));
+
+      // Restore playlist from IndexedDB
+      if (savedPlaylist) {
+        const playlistMeta = JSON.parse(savedPlaylist);
+        const restoredPlaylist = [];
+
+        for (const track of playlistMeta) {
+          try {
+            const data = await loadFileFromIndexedDB(track.id);
+            if (data && data.file) {
+              const url = URL.createObjectURL(data.file);
+              restoredPlaylist.push({
+                id: track.id,
+                name: track.name,
+                url: url
+              });
+            }
+          } catch (error) {
+            console.error('Error loading track from IndexedDB:', error);
+          }
+        }
+
+        if (restoredPlaylist.length > 0) {
+          setPlaylist(restoredPlaylist);
+        }
       }
-    }
+
+      // Restore session with timestamp-based timer
+      if (savedSession) {
+        const session = JSON.parse(savedSession);
+
+        if (session.isRunning && session.timerStartTime) {
+          const now = Date.now();
+          const elapsed = Math.floor((now - session.timerStartTime) / 1000);
+          const newTimeLeft = Math.max(0, session.timerDuration - elapsed);
+
+          setTimeLeft(newTimeLeft);
+          setIsBreak(session.isBreak);
+          setIsLongBreak(session.isLongBreak);
+          setWorkDuration(session.workDuration);
+          setBreakDuration(session.breakDuration);
+          setSessionCount(session.sessionCount);
+          setTimerStartTime(session.timerStartTime);
+          setTimerDuration(session.timerDuration);
+          setIsRunning(newTimeLeft > 0);
+        } else {
+          setTimeLeft(session.timeLeft || 25 * 60);
+          setIsBreak(session.isBreak || false);
+          setIsLongBreak(session.isLongBreak || false);
+          setWorkDuration(session.workDuration || 25);
+          setBreakDuration(session.breakDuration || 5);
+          setSessionCount(session.sessionCount || 0);
+        }
+      }
+    };
+
+    loadData();
   }, []);
 
   // Save stats
@@ -107,7 +221,16 @@ export default function AkatsukiPomodoro() {
     localStorage.setItem('pomodoroAutoStart', JSON.stringify(autoStartNext));
   }, [autoStartNext]);
 
-  // Save session state
+  // Save playlist metadata
+  useEffect(() => {
+    const playlistMeta = playlist.map(track => ({
+      id: track.id,
+      name: track.name
+    }));
+    localStorage.setItem('pomodoroPlaylist', JSON.stringify(playlistMeta));
+  }, [playlist]);
+
+  // Save session state with timestamp info
   useEffect(() => {
     const sessionState = {
       timeLeft,
@@ -117,10 +240,12 @@ export default function AkatsukiPomodoro() {
       workDuration,
       breakDuration,
       sessionCount,
+      timerStartTime,
+      timerDuration,
       timestamp: Date.now()
     };
     localStorage.setItem('pomodoroSession', JSON.stringify(sessionState));
-  }, [timeLeft, isRunning, isBreak, isLongBreak, workDuration, breakDuration, sessionCount]);
+  }, [timeLeft, isRunning, isBreak, isLongBreak, workDuration, breakDuration, sessionCount, timerStartTime, timerDuration]);
 
   // Update streak
   useEffect(() => {
@@ -132,11 +257,33 @@ export default function AkatsukiPomodoro() {
     }
   }, [sessionCount, stats.lastDate, stats.streak]);
 
+  // Timer control functions - defined before they're used
+  const toggleTimer = useCallback(() => {
+    if (isRunning) {
+      // Pause timer
+      setIsRunning(false);
+      setTimerStartTime(null);
+    } else {
+      // Start timer
+      setTimerStartTime(Date.now());
+      setTimerDuration(timeLeft);
+      setIsRunning(true);
+    }
+  }, [isRunning, timeLeft]);
+
+  const resetTimer = useCallback(() => {
+    setIsRunning(false);
+    setTimerStartTime(null);
+    const duration = (isBreak ? breakDuration : isLongBreak ? longBreakDuration : workDuration) * 60;
+    setTimeLeft(duration);
+    setTimerDuration(duration);
+  }, [isBreak, breakDuration, isLongBreak, longBreakDuration, workDuration]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyPress = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-      
+
       if (e.code === 'Space') {
         e.preventDefault();
         toggleTimer();
@@ -148,75 +295,128 @@ export default function AkatsukiPomodoro() {
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [isRunning]);
+  }, [toggleTimer, resetTimer]);
 
-  // Timer logic
+  // Timestamp-based timer logic
   useEffect(() => {
     let interval = null;
-    if (isRunning && timeLeft > 0) {
+
+    if (isRunning && timerStartTime) {
+      // Update every 100ms for smooth countdown
       interval = setInterval(() => {
-        setTimeLeft(time => time - 1);
-      }, 1000);
-    } else if (timeLeft === 0) {
+        const now = Date.now();
+        const elapsed = Math.floor((now - timerStartTime) / 1000);
+        const remaining = Math.max(0, timerDuration - elapsed);
+        setTimeLeft(remaining);
+
+        // Timer completed
+        if (remaining === 0) {
+          setIsRunning(false);
+          setTimerStartTime(null);
+        }
+      }, 100);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isRunning, timerStartTime, timerDuration]);
+
+  // Handle timer completion
+  useEffect(() => {
+    if (timeLeft === 0 && !isRunning && timerStartTime !== null) {
+      // Play notification sound
       if (customNotificationSound && notificationRef.current) {
         notificationRef.current.src = customNotificationSound;
-        notificationRef.current.play();
+        notificationRef.current.play().catch(e => console.log('Audio play failed:', e));
       } else if (notificationRef.current) {
-        notificationRef.current.play();
+        notificationRef.current.play().catch(e => console.log('Audio play failed:', e));
       }
-      
+
+      // Show browser notification
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification(isBreak || isLongBreak ? 'Break Complete!' : 'Work Session Complete!', {
           body: isBreak || isLongBreak ? 'Time to get back to work!' : 'Time for a break!',
-          icon: '/logo.jpg'
+          icon: '/logo192.png'
         });
       }
-      
+
+      // Record work session
       if (!isBreak && !isLongBreak) {
         const newSession = {
           date: new Date().toISOString(),
           duration: workDuration,
           type: 'work'
         };
-        setSessionHistory(prev => [newSession, ...prev].slice(0, 50)); // Keep last 50
-        
+        setSessionHistory(prev => [newSession, ...prev].slice(0, 50));
+
         setStats(prev => ({
           ...prev,
           totalSessions: prev.totalSessions + 1,
           totalMinutes: prev.totalMinutes + workDuration
         }));
       }
-      
+
+      // Transition to next phase
       if (isBreak || isLongBreak) {
-        setTimeLeft(workDuration * 60);
+        // Break complete, start work session
+        const duration = workDuration * 60;
+        setTimeLeft(duration);
+        setTimerDuration(duration);
         setIsBreak(false);
         setIsLongBreak(false);
         if (autoStartNext) {
+          setTimerStartTime(Date.now());
           setIsRunning(true);
         } else {
+          setTimerStartTime(null);
           setIsRunning(false);
         }
       } else {
+        // Work session complete, start break
         const newCount = sessionCount + 1;
         setSessionCount(newCount);
-        
+
+        let duration;
         if (newCount % 4 === 0) {
-          setTimeLeft(longBreakDuration * 60);
+          duration = longBreakDuration * 60;
           setIsLongBreak(true);
+          setIsBreak(false);
         } else {
-          setTimeLeft(breakDuration * 60);
+          duration = breakDuration * 60;
           setIsBreak(true);
+          setIsLongBreak(false);
         }
-        
+
+        setTimeLeft(duration);
+        setTimerDuration(duration);
+
         if (autoStartNext) {
+          setTimerStartTime(Date.now());
           setIsRunning(true);
         } else {
+          setTimerStartTime(null);
           setIsRunning(false);
         }
       }
     }
-    return () => clearInterval(interval);
-  }, [isRunning, timeLeft, isBreak, isLongBreak, workDuration, breakDuration, longBreakDuration, sessionCount, customNotificationSound, autoStartNext]);
+  }, [timeLeft, isRunning, timerStartTime, isBreak, isLongBreak, workDuration, breakDuration, longBreakDuration, sessionCount, customNotificationSound, autoStartNext]);
+
+  // Page Visibility API - handle app going to background/foreground
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && isRunning && timerStartTime) {
+        // App came back to foreground, recalculate time
+        const now = Date.now();
+        const elapsed = Math.floor((now - timerStartTime) / 1000);
+        const remaining = Math.max(0, timerDuration - elapsed);
+        setTimeLeft(remaining);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isRunning, timerStartTime, timerDuration]);
 
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -252,10 +452,13 @@ export default function AkatsukiPomodoro() {
     const [work, breakTime] = preset.split(':').map(Number);
     setWorkDuration(work);
     setBreakDuration(breakTime);
-    setTimeLeft(work * 60);
+    const duration = work * 60;
+    setTimeLeft(duration);
+    setTimerDuration(duration);
     setIsBreak(false);
     setIsLongBreak(false);
     setIsRunning(false);
+    setTimerStartTime(null);
   };
 
   const handleCustomTimer = () => {
@@ -264,34 +467,50 @@ export default function AkatsukiPomodoro() {
   };
 
   const applyCustomTimer = () => {
-    setTimeLeft(workDuration * 60);
+    const duration = workDuration * 60;
+    setTimeLeft(duration);
+    setTimerDuration(duration);
     setIsBreak(false);
     setIsLongBreak(false);
     setIsRunning(false);
+    setTimerStartTime(null);
   };
 
-  const toggleTimer = () => {
-    setIsRunning(!isRunning);
-  };
-
-  const resetTimer = () => {
-    setIsRunning(false);
-    setTimeLeft(workDuration * 60);
-    setIsBreak(false);
-    setIsLongBreak(false);
-  };
-
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files);
-    const newTracks = files.map(file => ({
-      name: file.name,
-      url: URL.createObjectURL(file),
-      id: Date.now() + Math.random()
-    }));
-    setPlaylist([...playlist, ...newTracks]);
+    const newTracks = [];
+
+    for (const file of files) {
+      const trackId = Date.now() + Math.random();
+      try {
+        // Save file to IndexedDB
+        await saveFileToIndexedDB(trackId, file);
+
+        // Create blob URL for playback
+        const url = URL.createObjectURL(file);
+        newTracks.push({
+          name: file.name,
+          url: url,
+          id: trackId
+        });
+      } catch (error) {
+        console.error('Error saving file to IndexedDB:', error);
+      }
+    }
+
+    if (newTracks.length > 0) {
+      setPlaylist([...playlist, ...newTracks]);
+    }
   };
 
-  const deleteTrack = (id) => {
+  const deleteTrack = async (id) => {
+    try {
+      // Remove from IndexedDB
+      await deleteFileFromIndexedDB(id);
+    } catch (error) {
+      console.error('Error deleting file from IndexedDB:', error);
+    }
+
     const newPlaylist = playlist.filter(track => track.id !== id);
     setPlaylist(newPlaylist);
     if (currentTrackIndex >= newPlaylist.length) {
@@ -299,8 +518,15 @@ export default function AkatsukiPomodoro() {
     }
   };
 
-  const clearPlaylist = () => {
+  const clearPlaylist = async () => {
     if (window.confirm('Clear entire playlist?')) {
+      try {
+        // Clear all files from IndexedDB
+        await clearAllFilesFromIndexedDB();
+      } catch (error) {
+        console.error('Error clearing IndexedDB:', error);
+      }
+
       setPlaylist([]);
       setCurrentTrackIndex(0);
       setIsPlaying(false);
