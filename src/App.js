@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, RotateCcw, Sun, Moon, Music, Upload, SkipForward, Volume2, Plus, Trash2, Check, Download, TrendingUp, Settings, X, Calendar, Target, Zap } from 'lucide-react';
+import Hourglass from './Hourglass';
 
 // IndexedDB utilities for music storage
 const DB_NAME = 'PomodoroMusicDB';
@@ -660,6 +661,28 @@ export default function AkatsukiPomodoro() {
 
   const themeClasses = getThemeClasses();
 
+  // Get theme color as hex for Hourglass component
+  const getThemeHexColor = () => {
+    if (isLongBreak) {
+      return darkMode ? '#60A5FA' : '#2563EB'; // Blue
+    }
+    if (isBreak) {
+      return darkMode ? '#4ADE80' : '#16A34A'; // Green
+    }
+
+    // Work session colors based on theme
+    switch(currentTheme) {
+      case 'itachi':
+        return darkMode ? '#EF4444' : '#DC2626'; // Red
+      case 'obito':
+        return darkMode ? '#FB923C' : '#F97316'; // Orange
+      case 'pain':
+        return darkMode ? '#C084FC' : '#A855F7'; // Purple
+      default: // akatsuki
+        return darkMode ? '#F87171' : '#EF4444'; // Red
+    }
+  };
+
   return (
     <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'bg-gray-900' : 'bg-gray-100'}`}>
       {/* Animated background */}
@@ -916,10 +939,20 @@ export default function AkatsukiPomodoro() {
           }`}>
             {/* Timer Display */}
             <div className="text-center mb-8">
+              {/* Hourglass Animation */}
+              <div className="mb-6">
+                <Hourglass
+                  progress={progress / 100}
+                  isRunning={isRunning}
+                  themeColor={getThemeHexColor()}
+                  darkMode={darkMode}
+                />
+              </div>
+
               <div className={`text-5xl sm:text-7xl font-bold mb-4 transition-all ${
                 isLongBreak
                   ? (darkMode ? 'text-blue-400' : 'text-blue-600')
-                  : isBreak 
+                  : isBreak
                     ? (darkMode ? 'text-green-400' : 'text-green-600')
                     : themeClasses.primaryColor
               } ${isRunning ? 'animate-pulse' : ''}`}>
